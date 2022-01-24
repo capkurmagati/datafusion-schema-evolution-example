@@ -4,7 +4,7 @@ use datafusion::datasource::object_store::local::LocalFileSystem;
 use datafusion::datasource::{PartitionedFile, TableProvider};
 use datafusion::error::Result;
 use datafusion::logical_plan::Expr;
-use datafusion::physical_plan::file_format::{ParquetExec, PhysicalPlanConfig};
+use datafusion::physical_plan::file_format::{ParquetExec, FileScanConfig};
 use datafusion::physical_plan::{ExecutionPlan, Statistics};
 use std::any::Any;
 use std::sync::Arc;
@@ -36,18 +36,16 @@ impl TableProvider for MyTable {
     async fn scan(
         &self,
         projection: &Option<Vec<usize>>,
-        batch_size: usize,
         _filters: &[Expr],
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let files = get_file_from_path(&self.path);
-        let config = PhysicalPlanConfig {
+        let config = FileScanConfig {
             object_store: Arc::new(LocalFileSystem {}),
             file_groups: vec![files],
             file_schema: self.schema(),
             statistics: Statistics::default(),
             projection: projection.clone(),
-            batch_size,
             limit,
             table_partition_cols: vec![],
         };
@@ -105,33 +103,34 @@ mod tests {
             "+-------+-------+",
             "| col_1 | col_2 |",
             "+-------+-------+",
-            "| 1     | NULL  |",
+            "| 1     |       |",
             "| 1     | 1     |",
-            "| 2     | NULL  |",
+            "| 2     |       |",
             "| 2     | 2     |",
-            "| 3     | NULL  |",
+            "| 3     |       |",
             "| 3     | 3     |",
             "+-------+-------+",
         ];
         assert_batches_sorted_eq!(expected, &actual);
     }
 
-    // Copy from arrow-datafusion/datafusion/tests/sql.rs
+    // Copy from arrow-datafusion/datafusion/tests/sql/mod.rs
     async fn execute_to_batches(ctx: &mut ExecutionContext, sql: &str) -> Vec<RecordBatch> {
         let msg = format!("Creating logical plan for '{}'", sql);
         let plan = ctx.create_logical_plan(sql).expect(&msg);
         let logical_schema = plan.schema();
-
+    
         let msg = format!("Optimizing logical plan for '{}': {:?}", sql, plan);
         let plan = ctx.optimize(&plan).expect(&msg);
         let optimized_logical_schema = plan.schema();
-
+    
         let msg = format!("Creating physical plan for '{}': {:?}", sql, plan);
         let plan = ctx.create_physical_plan(&plan).await.expect(&msg);
-
+    
         let msg = format!("Executing physical plan for '{}': {:?}", sql, plan);
-        let results = collect(plan).await.expect(&msg);
-
+        let runtime = ctx.state.lock().unwrap().runtime_env.clone();
+        let results = collect(plan, runtime).await.expect(&msg);
+    
         assert_eq!(logical_schema.as_ref(), optimized_logical_schema.as_ref());
         results
     }

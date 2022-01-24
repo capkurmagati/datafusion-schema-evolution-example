@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.41"
-datafusion = "6.0.0"
-arrow = "6.0.0"
+# build commit: 741df36fa0e401ec61d5441590728bc653ae0924
+datafusion = { path = "../arrow-datafusion/datafusion" }
+arrow = "7.0.0"
 tokio = "1.0"
